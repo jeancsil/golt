@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,11 +21,15 @@ func main() {
 
 	var wg sync.WaitGroup
 	wg.Add(*concurrency)
+	var completed int64
 	var start = time.Now()
 	for i := 0; i < *concurrency; i++ {
 		go func() {
 			for u := range jobs {
-				results <- makeRequest(u)
+				duration, err := makeRequest(u, &completed, *requests)
+				if err == nil {
+					results <- duration
+				}
 			}
 			wg.Done()
 		}()
@@ -77,19 +82,20 @@ func calculateStats(timings []time.Duration, results chan time.Duration) []time.
 	return timings
 }
 
-func makeRequest(url string) time.Duration {
+func makeRequest(url string, completed *int64, totalRequests int) (time.Duration, error) {
 	var start = time.Now()
 	resp, err := http.Get(url)
+	atomic.AddInt64(completed, 1)
+	fmt.Printf("\rProgress: %d/%d requests completed...", atomic.LoadInt64(completed), totalRequests)
 
 	if err != nil {
 		fmt.Println(err)
-		return time.Duration(0)
+		return time.Duration(0), err
 	}
 
-	fmt.Printf("Fetched %s with status: %s\n", url, resp.Status)
 	defer resp.Body.Close()
 
-	return time.Since(start)
+	return time.Since(start), nil
 }
 
 func sliceSum(slice []time.Duration) time.Duration {
