@@ -22,11 +22,12 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(*concurrency)
 	var completed int64
+	var failed int64
 	var start = time.Now()
 	for i := 0; i < *concurrency; i++ {
 		go func() {
 			for u := range jobs {
-				duration, err := makeRequest(u, &completed, *requests)
+				duration, err := makeRequest(u, &completed, &failed, *requests)
 				if err == nil {
 					results <- duration
 				}
@@ -56,7 +57,7 @@ func reportStats(timings []time.Duration, start time.Time) {
 
 	// fmt.Printf("Timings: %v\n", timings)
 	fmt.Printf("\nFastest: %s\n", timings[0])
-	fmt.Printf("Median: %s\n", timings[n_reqs/2])
+	// fmt.Printf("Median: %s\n", timings[n_reqs/2])
 	fmt.Printf("Slowest: %s\n", timings[n_reqs-1])
 	fmt.Printf("Average: %f\n", float64(sliceSum(timings).Seconds())/float64(n_reqs))
 	fmt.Printf("Throughput: %f req/s\n\n", float64(n_reqs)/time.Since(start).Seconds())
@@ -82,14 +83,14 @@ func calculateStats(timings []time.Duration, results chan time.Duration) []time.
 	return timings
 }
 
-func makeRequest(url string, completed *int64, totalRequests int) (time.Duration, error) {
+func makeRequest(url string, completed *int64, failed *int64, totalRequests int) (time.Duration, error) {
 	var start = time.Now()
 	resp, err := http.Get(url)
 	atomic.AddInt64(completed, 1)
-	fmt.Printf("\rProgress: %d/%d requests completed...", atomic.LoadInt64(completed), totalRequests)
+	fmt.Printf("\rProgress: %d/%d requests completed, %d failed...", atomic.LoadInt64(completed), totalRequests, atomic.LoadInt64(failed))
 
 	if err != nil {
-		fmt.Println(err)
+		atomic.AddInt64(failed, 1)
 		return time.Duration(0), err
 	}
 
